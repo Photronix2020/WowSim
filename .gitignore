@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# Per-user state
+config.json
+saved/
+cache/

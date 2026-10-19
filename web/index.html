@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WowSim</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">WowSim <span class="sub">addon sandbox</span></div>
+  <div id="loadedNames" class="loaded"></div>
+  <div class="spacer"></div>
+  <label class="tog" title="Reload automatically when an addon file changes on disk"><input type="checkbox" id="autoreload" checked> Auto-reload</label>
+  <label class="tog" title="Show the frame stack under the mouse (like /fstack)"><input type="checkbox" id="inspect"> Inspect</label>
+  <label class="tog" title="Outline Blizzard art we cannot draw"><input type="checkbox" id="showMissing" checked> Art outlines</label>
+  <label class="tog"><input type="checkbox" id="sound"> Sound</label>
+  <select id="screen" title="Size of the game screen in UI units. A lower in-game UI scale (or a higher resolution with pixel-perfect UI) gives more room.">
+    <optgroup label="16:9">
+      <option value="1365x768">1365×768 · UI scale 1.0</option>
+      <option value="1600x900">1600×900 · UI scale 0.85</option>
+      <option value="1920x1080">1920×1080 · UI scale 0.71</option>
+      <option value="2133x1200">2133×1200 · UI scale 0.64 (min)</option>
+      <option value="2560x1440">2560×1440 · 1440p pixel-perfect</option>
+      <option value="3840x2160">3840×2160 · 4K pixel-perfect</option>
+    </optgroup>
+    <optgroup label="Other shapes">
+      <option value="1792x768">21:9 · 1792×768</option>
+      <option value="3440x1440">21:9 · 3440×1440</option>
+      <option value="1229x768">16:10 · 1229×768</option>
+      <option value="1728x1080">16:10 · 1728×1080</option>
+      <option value="1024x768">4:3 · 1024×768</option>
+    </optgroup>
+    <option value="custom">Custom…</option>
+  </select>
+  <select id="zoom" title="Zoom the game view (Ctrl+wheel also zooms)">
+    <option value="fit">Fit</option><option value="0.25">25%</option><option value="0.33">33%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option>
+  </select>
+  <button id="pauseBtn" class="btn">Pause</button>
+  <button id="reloadBtn" class="btn primary" title="/reload — saves SavedVariables and restarts the addon">Reload UI</button>
+</header>
+
+<main id="layout">
+  <section id="stageWrap">
+    <div id="stageScroll"><div id="sizer">
+    <div id="stage" tabindex="0">
+      <div id="world"></div>
+      <div id="frames"></div>
+      <div id="inspectBox" hidden></div>
+    </div>
+    </div></div>
+    <div id="chat">
+      <div id="chatLines"></div>
+      <input id="chatInput" autocomplete="off" spellcheck="false" placeholder="Say something or type a /command — Enter to send">
+    </div>
+    <div id="toasts"></div>
+    <div id="idle" hidden>
+      <h2>No addon loaded</h2>
+      <p>Pick one or more addons in the <b>Addons</b> tab and press <b>Load</b>.</p>
+    </div>
+  </section>
+
+  <aside id="side">
+    <nav id="tabs">
+      <button data-tab="addons" class="on">Addons</button>
+      <button data-tab="player">Player</button>
+      <button data-tab="events">Events</button>
+      <button data-tab="console">Console</button>
+      <button data-tab="errors">Errors <span id="errBadge" class="badge" hidden>0</span></button>
+      <button data-tab="inspector">Inspect</button>
+      <button data-tab="more">More</button>
+    </nav>
+
+    <div class="panel on" id="tab-addons">
+      <div class="row"><input id="addonFilter" placeholder="Filter addons…"><button id="loadBtn" class="btn primary">Load</button></div>
+      <div id="addonList" class="list"></div>
+      <h3>Running</h3>
+      <div id="running" class="kv"></div>
+      <h3>Options panels</h3>
+      <div id="categories" class="chips"></div>
+      <h3>Slash commands</h3>
+      <div id="slash" class="chips"></div>
+      <h3>Boot log</h3>
+      <pre id="bootLog" class="mono small"></pre>
+    </div>
+
+    <div class="panel" id="tab-player">
+      <h3>Character</h3>
+      <div class="grid">
+        <label>Name <input data-p="name"></label>
+        <label>Class <select data-p="class" id="classSel"></select></label>
+        <label>Level <input type="number" data-p="level" min="1" max="80"></label>
+        <label>Race <input data-p="race"></label>
+        <label>Faction <select data-p="faction"><option>Alliance</option><option>Horde</option></select></label>
+        <label>Money (copper) <input type="number" data-p="money"></label>
+      </div>
+      <div class="toggles">
+        <label class="pill combat"><input type="checkbox" data-p="inCombat"> In combat</label>
+        <label class="pill"><input type="checkbox" data-p="dead"> Dead</label>
+        <label class="pill"><input type="checkbox" data-p="mounted"> Mounted</label>
+        <label class="pill"><input type="checkbox" data-p="resting"> Resting</label>
+        <label class="pill"><input type="checkbox" data-p="afk"> AFK</label>
+      </div>
+      <label class="slider">Health <input type="range" data-p="health" min="0" max="100"><span data-show="health"></span></label>
+      <label class="slider">Power <input type="range" data-p="power" min="0" max="100"><span data-show="power"></span></label>
+      <h3>Target</h3>
+      <div class="toggles">
+        <label class="pill"><input type="checkbox" data-p="target.exists"> Has target</label>
+        <label class="pill"><input type="checkbox" data-p="target.hostile"> Hostile</label>
+        <label class="pill"><input type="checkbox" data-p="target.isPlayer"> Player</label>
+        <label class="pill"><input type="checkbox" data-p="target.dead"> Dead</label>
+      </div>
+      <div class="grid">
+        <label>Name <input data-p="target.name"></label>
+        <label>Level <input type="number" data-p="target.level"></label>
+        <label>Type <select data-p="target.classification"><option>normal</option><option>elite</option><option>rare</option><option>rareelite</option><option>worldboss</option><option>trivial</option></select></label>
+        <label>Creature <input data-p="target.creatureType"></label>
+      </div>
+      <label class="slider">Target HP <input type="range" data-p="target.health" min="0" max="100"><span data-show="target.health"></span></label>
+      <h3>Group &amp; world</h3>
+      <div class="grid">
+        <label>Party members <select data-p="group"><option value="0">Solo</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+        <label class="pill inline"><input type="checkbox" data-p="raid"> Raid</label>
+        <label>Zone <input data-p="zone"></label>
+        <label>Subzone <input data-p="subZone"></label>
+      </div>
+      <label class="pill"><input type="checkbox" data-p="loopbackAddonMessages"> Echo my addon messages back (CHAT_MSG_ADDON)</label>
+      <h3>Known spells</h3>
+      <p class="hint">One per line: <code>id name icon</code> — e.g. <code>585 Smite spell_holy_holysmite</code>. Feeds GetSpellInfo, IsSpellKnown and the spellbook.</p>
+      <textarea id="spells" class="mono" rows="5"></textarea>
+      <div class="row"><button id="spellsBtn" class="btn">Apply spells</button><button id="presetBtn" class="btn" title="Typical level-60 spells for the selected class; names and icons load from Wowhead's classic data">Use class preset</button></div>
+      <h3>Time</h3>
+      <label class="slider">Speed <input type="range" id="speed" min="0.1" max="5" step="0.1" value="1"><span id="speedVal">1×</span></label>
+    </div>
+
+    <div class="panel" id="tab-events">
+      <h3>Fire an event</h3>
+      <input id="eventName" list="eventList" placeholder="EVENT_NAME (type to search 1800+ events)">
+      <datalist id="eventList"></datalist>
+      <div id="eventPayload" class="hint"></div>
+      <input id="eventArgs" placeholder='Arguments, JSON or comma separated — e.g. "player", 42'>
+      <button id="fireBtn" class="btn primary">Fire</button>
+      <h3>Quick events</h3>
+      <div class="chips" id="quickEvents"></div>
+      <h3>Addon messages sent</h3>
+      <div id="addonMsgs" class="log mono small"></div>
+    </div>
+
+    <div class="panel" id="tab-console">
+      <h3>Lua console</h3>
+      <p class="hint">Runs in the addon's world. Expressions print their value. Ctrl+Enter runs.</p>
+      <textarea id="code" class="mono" rows="6" spellcheck="false" placeholder="GetTime()&#10;PackTrackDB&#10;UIParent:GetNumChildren()"></textarea>
+      <div class="row"><button id="runBtn" class="btn primary">Run</button><button id="clearOut" class="btn">Clear</button></div>
+      <pre id="out" class="log mono small"></pre>
+    </div>
+
+    <div class="panel" id="tab-errors">
+      <div class="row"><h3 style="flex:1">Lua errors</h3><button id="clearErrors" class="btn">Clear</button></div>
+      <div id="errors"></div>
+    </div>
+
+    <div class="panel" id="tab-inspector">
+      <p class="hint">Turn on <b>Inspect</b> in the top bar, then hover the game view. Click a frame in the list to keep it highlighted.</p>
+      <div id="inspectList"></div>
+    </div>
+
+    <div class="panel" id="tab-more">
+      <h3>SavedVariables</h3>
+      <div class="row"><select id="svAddon"></select><button id="svShow" class="btn">Show</button><button id="svReset" class="btn danger">Reset</button></div>
+      <p class="hint">Stored in <code>Addondev\WowSim\saved\</code>, written on reload and when the server stops. Your real WTF files are never touched.</p>
+      <pre id="svText" class="log mono small"></pre>
+      <h3>Faked APIs the addon called</h3>
+      <p class="hint">These exist in the game but here only return empty defaults. If the addon behaves oddly, look here first.</p>
+      <div id="stubs" class="log mono small"></div>
+    </div>
+  </aside>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
