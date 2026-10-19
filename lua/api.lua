@@ -1219,8 +1219,17 @@ function C_DateAndTime.GetServerTimeLocal() return time() end
 C_CVar = C_CVar or {}
 C_CVar.GetCVar, C_CVar.SetCVar, C_CVar.GetCVarBool, C_CVar.RegisterCVar, C_CVar.GetCVarDefault = GetCVar, SetCVar, GetCVarBool, RegisterCVar, GetCVarDefault
 C_Texture = C_Texture or {}
-function C_Texture.GetAtlasInfo(a) return { width = 32, height = 32, file = a, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1 } end
-function SIM.atlasSize(a) return 32, 32 end
+-- Real atlas data (exact Forever build) when the Blizzard data download is available.
+function SIM.atlas(name)
+	if type(name) ~= "string" or not SIM.py.atlasInfo then return nil end
+	local file, w, h, l, r, t, b, th, tv = SIM.py.atlasInfo(name)
+	if not file then return nil end
+	return { file = file, filename = file, width = w, height = h, leftTexCoord = l, rightTexCoord = r,
+		topTexCoord = t, bottomTexCoord = b, tilesHorizontally = th, tilesVertically = tv }
+end
+function C_Texture.GetAtlasInfo(a) return SIM.atlas(a) end
+function C_Texture.GetAtlasExists(a) return SIM.atlas(a) ~= nil end
+function SIM.atlasSize(a) local i = SIM.atlas(a) if i then return i.width, i.height end end
 C_Seasons = C_Seasons or {}
 function C_Seasons.HasActiveSeason() return false end
 function C_Seasons.GetActiveSeason() return 0 end
@@ -1263,4 +1272,14 @@ local GS = {
 	LFG_TYPE_DUNGEON = "Dungeon", INSTANCE = "Instance", DUNGEONS = "Dungeons", RAIDS = "Raids", EXPERIENCE_COLON = "Experience:",
 	XP = "XP", REPUTATION = "Reputation", HONOR = "Honor", CURRENCY = "Currency", MAIL_LABEL = "Mail", INBOX = "Inbox",
 }
-for k, v in pairs(GS) do if rawget(_G, k) == nil then _G[k] = v end end
+SIM.fallbackGS = {}
+for k, v in pairs(GS) do if rawget(_G, k) == nil then _G[k] = v SIM.fallbackGS[k] = true end end
+
+-- The client's full GlobalStrings table (from the Blizzard data download).
+function SIM.loadGlobalStrings(t)
+	local n = 0
+	for k, v in pairs(t) do
+		if rawget(_G, k) == nil or SIM.fallbackGS[k] then _G[k] = v n = n + 1 end
+	end
+	return n
+end

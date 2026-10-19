@@ -37,10 +37,20 @@ On another machine: `pip install -r requirements.txt` (lupa ships a real Lua 5.1
 
 It also loads some of Blizzard's own utility code from the API mirror, such as `SecondsFormatter`, the `Spell`/`Item` mixins and `TableUtil`. It only adds names that WowSim doesn't already define.
 
+### Blizzard game data (`assets.py`)
+
+On first use WowSim downloads game data for the exact Forever build and caches it in `cache\blizzard\`. None of it is part of this repo.
+
+- **Global strings**: the client's ~27,000 `GlobalStrings` (`ITEM_LEVEL`, `ERR_NOT_IN_COMBAT`, …), from [wago.tools](https://wago.tools) DB2 exports.
+- **Texture atlases**: `SetAtlas`, `GetAtlasInfo` and `useSize` return the real file, texture coordinates and size (~20,000 atlases).
+- **Real UI art and fonts**: a texture path or file ID is mapped to its file with the [community listfile](https://github.com/wowdev/wow-listfile) (one-time ~150 MB download, reduced to a small index of interface and font files). The file is then fetched once from wago.tools and converted to PNG. Text uses the real Friz Quadrata and Arial Narrow, both for drawing and for measuring string widths.
+
+The build is read from `..\API\version.txt` (default `1.60.1.70009`). Set `"blizzardData": false` in `config.json` to work offline. WowSim then falls back to the CSS look-alikes and Windows fonts. The idea of using exact-build DB2 data and real assets comes from [Osso/wow-ui-sim](https://github.com/Osso/wow-ui-sim), a far larger Rust simulator that also supports WoW Forever.
+
 ## Limits
 
-- **No game art.** WoW's textures are packed inside the game data. Icons (`Interface\Icons\…`) load from Wowhead's icon CDN. Your addon's own `.tga`/`.blp` files are decoded and shown. Blizzard templates (buttons, checkboxes, sliders, dialogs) are drawn in CSS look-alikes. Other Blizzard art shows as a faint dashed outline (turn off with **Art outlines**).
-- **Fonts are approximations.** Friz Quadrata → Segoe UI Semibold, Arial Narrow → Arial Narrow.
+- **Templates still use look-alikes.** Textures and atlases addons set themselves use real Blizzard art (above). The templates WowSim builds (panel buttons, checkboxes, sliders, dialog frames, backdrop borders) are still drawn in CSS. Art that can't be found shows as a faint dashed outline (turn off with **Art outlines**).
+- **Art comes from the current client.** Files are fetched by file ID, so the odd texture may look slightly different from Forever's.
 - **The game world is not simulated.** There are no real combat, auras, cooldowns or quests unless you fire events yourself. Secret values from Forever's combat restrictions aren't modelled either.
 - **XML frame definitions** (`<Frame>` in .xml) aren't built. `<Script>`/`<Include>` files are loaded, which is enough for libraries such as Ace3.
 - Large third-party addons that hook deep into Blizzard frames may still error. Your own addons (ForeCast, PackTrack, VibeCraft, Wish Is My Command, QuiverShift, Smite Club) load cleanly.

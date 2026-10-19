@@ -694,6 +694,7 @@ end
 local Texture = defclass("Texture", "LayeredRegion")
 function Texture:SetTexture(tex, wrapH, wrapV, filter)
 	local s = st(self)
+	if s.atlas then s.tc = nil end
 	s.color, s.atlas, s.grad = nil, nil, nil
 	if tex == nil or tex == "" then s.tex = nil return true end
 	s.tex = tex
@@ -709,8 +710,14 @@ function Texture:SetColorTexture(r, g, b, a)
 end
 function Texture:SetAtlas(atlas, useSize)
 	local s = st(self)
-	s.atlas, s.tex, s.color = atlas, nil, nil
-	if useSize then local w, h = SIM.atlasSize(atlas) if w then s.w, s.h = w, h invalidate() end end
+	s.atlas, s.tex, s.color, s.grad = atlas, nil, nil, nil
+	local info = SIM.atlas and SIM.atlas(atlas)
+	if info then
+		s.tex = info.file
+		s.tc = { info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord }
+		if useSize then s.w, s.h = info.width, info.height invalidate() end
+	end
+	return info ~= nil
 end
 function Texture:GetAtlas() return st(self).atlas end
 function Texture:SetTexCoord(...)

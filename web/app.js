@@ -50,11 +50,37 @@ window.addEventListener("resize", fit);
 const rgba = (c, mul = 1) => c ? `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${(c[3] ?? 1) * mul})` : "transparent";
 const esc = s => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 
+// Real Blizzard art comes from the server (/art), which fetches and caches it the
+// first time. Each path is probed once; until it loads we draw a CSS stand-in.
+const art = new Map();   // texture key -> "loading" | "ok" | "missing"
+function realArt(tex) {
+  if (tex == null || tex === "") return null;
+  const key = String(tex);
+  const url = "/art?p=" + encodeURIComponent(key);
+  const st = art.get(key);
+  if (st === "ok") return url;
+  if (st === undefined) {
+    art.set(key, "loading");
+    const img = new Image();
+    img.onload = () => { art.set(key, "ok"); sigs.clear(); };
+    img.onerror = () => {
+      fetch(url).then(r => {
+        if (r.status === 503) setTimeout(() => art.delete(key), 4000); // art index still downloading
+        else art.set(key, r.ok ? "ok" : "missing");
+        if (r.ok) sigs.clear();
+      }).catch(() => art.set(key, "missing"));
+    };
+    img.src = url;
+  }
+  return null;
+}
+const artMissing = tex => art.get(String(tex)) === "missing";
+
 function iconUrl(path) {
   if (path == null) return null;
   if (typeof path === "number") {
     if (FILE_ICONS[path]) return zam(FILE_ICONS[path]);
-    return zam("inv_misc_questionmark");
+    return realArt(path) || (artMissing(path) ? zam("inv_misc_questionmark") : null);
   }
   const p = String(path).replace(/\//g, "\\");
   const low = p.toLowerCase();
@@ -66,7 +92,7 @@ function iconUrl(path) {
   return null;
 }
 const zam = n => `https://wow.zamimg.com/images/wow/icons/large/${n.toLowerCase()}.jpg`;
-const FILE_ICONS = { 134400: "inv_misc_questionmark", 136243: "trade_engineering", 135932: "spell_holy_holybolt" };
+const FILE_ICONS = { 134400: "inv_misc_questionmark" };
 
 // Blizzard art we can approximate with CSS.
 const SOLID = /(white8x8|chatframebackground|ui-tooltip-background|tooltips\\ui-tooltip-background|interface\\buttons\\white8x8|solidtexture|interface\\common\\white)/;
@@ -108,7 +134,7 @@ function parseText(s, size) {
         if (e > 0) {
           const parts = s.substring(i + 2, e).split(":");
           const h = Number(parts[1]) || size, w = Number(parts[2]) || h || size;
-          const url = iconUrl(parts[0]);
+          const url = iconUrl(parts[0]) || realArt(parts[0]);
           out += url ? `<img class="ti" src="${url}" style="width:${w || size}px;height:${h || size}px">` : `<i style="display:inline-block;width:${w || size}px;height:${h || size}px;outline:1px dashed #666"></i>`;
           i = e + 2; continue;
         }
@@ -188,7 +214,8 @@ function drawTexture(el, item) {
     s.background = rgba([c[0] * vc[0], c[1] * vc[1], c[2] * vc[2], (c[3] ?? 1)]);
   } else if (item.tex != null) {
     const low = String(item.tex).toLowerCase().replace(/\//g, "\\");
-    const url = iconUrl(item.tex);
+    const solid = SOLID.test(low);
+    const url = solid ? null : (iconUrl(item.tex) || realArt(item.tex));
     const bi = url ? null : builtin(low);
     if (url) {
       const tc = item.tc || [0, 1, 0, 1];
@@ -260,7 +287,7 @@ function drawBackdrop(el, item) {
     else if (bgLow.includes("dialogbox-background")) base = [0.12, 0.12, 0.13];
     else if (bgLow.includes("sliderbar-background")) base = [0.05, 0.05, 0.05];
     else if (bgLow.startsWith("interface\\addons\\") || bgLow.startsWith("interface/addons/")) img = "/media?p=" + encodeURIComponent(item.bg);
-    else if (!SOLID.test(bgLow)) base = [0.4, 0.4, 0.4];
+    else if (!SOLID.test(bgLow)) { img = realArt(item.bg); if (!img) base = [0.4, 0.4, 0.4]; }
     const col = rgba([base[0] * bc[0], base[1] * bc[1], base[2] * bc[2], bc[3] ?? 1]);
     const st = `left:${ins[0]}px;right:${ins[1]}px;top:${ins[2]}px;bottom:${ins[3]}px;`;
     html += img ? `<div class="bdbg" style="${st}background:url('${img}') ${item.tile ? "repeat" : "0 0/100% 100%"};opacity:${bc[3] ?? 1}"></div>`

@@ -22,6 +22,8 @@ from io import BytesIO
 
 import lupa.lua51 as lupa
 
+import assets
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ADDONDEV = os.path.dirname(HERE)
 LUA_DIR = os.path.join(HERE, "lua")
@@ -187,10 +189,18 @@ def discover_addons():
 class Fonts:
     def __init__(self):
         self.cache = {}
+        self.real = {}   # wow path -> real WoW font file from Blizzard data ("" = none)
 
     def file_for(self, wow_path, addon_dirs):
         p = (wow_path or "").replace("/", "\\")
         low = p.lower()
+        real = self.real.get(low)
+        if real is None and BLIZZ is not None and not low.startswith("interface\\addons\\"):
+            if BLIZZ.listfile_state == "ready":
+                real = BLIZZ.font_file(p) or ""
+                self.real[low] = real
+        if real:
+            return real
         for key, fname in FONT_MAP.items():
             if key in low:
                 return os.path.join(WIN_FONTS, fname)
@@ -220,6 +230,7 @@ class Fonts:
 
 
 FONTS = Fonts()
+BLIZZ = None   # assets.BlizzardData, created in main()
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +357,19 @@ class Sim:
                 except Exception as e:
                     log("spellLoaded failed:", e)
 
+    _strings = None
+
+    def global_strings(self):
+        if Sim._strings is None:
+            Sim._strings = BLIZZ.global_strings()
+        return Sim._strings
+
+    def _atlas_info(self, name):
+        a = BLIZZ.atlas_info(name) if BLIZZ is not None else None
+        if not a:
+            return None
+        return a["file"], a["width"], a["height"], a["left"], a["right"], a["top"], a["bottom"], a["tilesH"], a["tilesV"]
+
     def _request(self, what):
         self.pending.append(str(what))
 
@@ -382,6 +406,7 @@ class Sim:
             py.request = self._request
             py.fileExists = self._file_exists
             py.spellInfo = self._spell_info
+            py.atlasInfo = self._atlas_info
             sim.py = py
             for f in LUA_FILES:
                 with open(os.path.join(LUA_DIR, f), "r", encoding="utf-8") as fh:
@@ -394,6 +419,14 @@ class Sim:
             self.sim = g["__SIM"]
             # Strip things WoW does not have.
             L.execute("io = nil; require = nil; dofile = nil; loadfile = nil; package = nil; module = nil")
+            if BLIZZ is not None and BLIZZ.enabled:
+                strings = self.global_strings()
+                if strings:
+                    n = self.sim.loadGlobalStrings(L.table_from(strings))
+                    self.boot_log.append(f"Global strings: {n} from build {BLIZZ.build}")
+                atl = BLIZZ.load_atlases()
+                if atl:
+                    self.boot_log.append(f"Texture atlases: {atl}")
             docs = self.load_docs()
             for name, code in docs:
                 self.sim.loadDocChunk(code, name)
@@ -736,6 +769,7 @@ class Handler(BaseHTTPRequestHandler):
                 data["addons"] = [{"name": a["name"], "title": a["meta"].get("Title", a["name"]), "saved": a["saved"],
                                    "files": a["files"], "version": a["meta"].get("Version", "")} for a in SIM.addons]
                 data["paused"] = SIM.paused
+                data["blizzard"] = BLIZZ.status() if BLIZZ is not None else {"enabled": False}
                 data["speed"] = SIM.speed
                 return self.json(data)
             if path == "/api/events":
@@ -753,6 +787,8 @@ class Handler(BaseHTTPRequestHandler):
                     for i, n in enumerate(rec["saved"], start=1):
                         names[i] = n
                     return self.json({"text": SIM.sim.saveVariables(names) or "-- (nothing saved yet)"})
+            if path == "/art":
+                return self.art((q.get("p") or [""])[0])
             if path == "/media":
                 return self.media((q.get("p") or [""])[0])
             if path == "/font":
@@ -798,6 +834,19 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             data = fh.read()
         self.send(200, data, CONTENT_TYPES.get(ext, "application/octet-stream"))
+
+    def art(self, wow_path):
+        """Real Blizzard art for a texture path or file ID (as PNG), 404 if unavailable."""
+        if BLIZZ is None or not BLIZZ.enabled:
+            return self.send(404, "blizzard data disabled", "text/plain")
+        hit = BLIZZ.resolve(wow_path)
+        if not hit:
+            code = 503 if BLIZZ.listfile_state in ("downloading", "unknown") else 404
+            return self.send(code, "unknown texture", "text/plain")
+        png = BLIZZ.png(hit[0])
+        if png is None:
+            return self.send(404, "could not load texture", "text/plain")
+        self.send(200, png, "image/png", {"Cache-Control": "max-age=86400"})
 
     def font(self, wow_path):
         path = FONTS.file_for(wow_path, SIM.addon_dirs)
@@ -964,8 +1013,18 @@ def watch_loop():
 
 
 def main():
-    global SPELLS
+    global SPELLS, BLIZZ
     SPELLS = SpellCache()
+    build = assets.DEFAULT_BUILD
+    try:
+        with open(os.path.join(ADDONDEV, "API", "version.txt"), "r") as fh:
+            v = fh.read().strip()
+            if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", v):
+                build = v
+    except OSError:
+        pass
+    BLIZZ = assets.BlizzardData(os.path.join(HERE, "cache", "blizzard"), build=SIM.config.get("blizzardBuild", build),
+                                log=log, enabled=SIM.config.get("blizzardData", True))
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8642)
     ap.add_argument("--addon", action="append", default=[])
